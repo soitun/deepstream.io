@@ -102,6 +102,7 @@ exports.TOPIC.LISTEN_PATTERNS = 'LIP'
 exports.TOPIC.SUBSCRIPTIONS = 'SUB'
 
 exports.ACTIONS = {}
+exports.ACTIONS.GOODBYE = 'G'
 exports.ACTIONS.PING = 'PI'
 exports.ACTIONS.PONG = 'PO'
 exports.ACTIONS.ACK = 'A'

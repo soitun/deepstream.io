@@ -5,10 +5,7 @@ const messageParser = require('./message-parser')
 const messageBuilder = require('./message-builder')
 const SocketWrapper = require('./socket-wrapper')
 const events = require('events')
-const http = require('http')
-const https = require('https')
-const uws = require('uws')
-
+const Server = require('./websocket-server')
 const OPEN = 'OPEN'
 
 /**
@@ -27,33 +24,7 @@ module.exports = class ConnectionEndpoint extends events.EventEmitter {
   constructor (options, readyCallback) {
     super()
     this._options = options
-    this._readyCallback = readyCallback
-
-    this._wsReady = false
-    this._wsServerClosed = false
-
-    this._server = this._createHttpServer()
-    this._server.listen(this._options.port, this._options.host)
-    this._server.on('request', this._handleHealthCheck.bind(this))
-    this._options.logger.log(
-      C.LOG_LEVEL.INFO,
-      C.EVENT.INFO,
-      `Listening for health checks on path ${options.healthCheckPath}`
-    )
-
-    this._ws = new uws.Server({
-      server: this._server,
-      perMessageDeflate: false,
-      path: this._options.urlPath
-    })
-    this._ws.startAutoPing(
-      this._options.heartbeatInterval,
-      messageBuilder.getMsg(C.TOPIC.CONNECTION, C.ACTIONS.PING)
-    )
-    this._server.once('listening', this._checkReady.bind(this))
-    this._ws.on('error', this._onError.bind(this))
-    this._ws.on('connection', this._onConnection.bind(this))
-
+    this._server = new Server(options, readyCallback)
     this._authenticatedSocketsCounter = 0
   }
 
@@ -75,23 +46,6 @@ module.exports = class ConnectionEndpoint extends events.EventEmitter {
   }
 
   /**
-   * Closes the ws server connection. The ConnectionEndpoint
-   * will emit a close event once succesfully shut down
-   * @public
-   * @returns {void}
-   */
-  close () {
-    this._server.removeAllListeners('request')
-    this._ws.removeAllListeners('connection')
-    this._ws.close()
-
-    this._server.close(() => {
-      this._wsServerClosed = true
-      this._checkClosed()
-    })
-  }
-
-  /**
    * Returns the number of currently connected clients. This is used by the
    * cluster module to determine loadbalancing endpoints
    *
@@ -100,59 +54,6 @@ module.exports = class ConnectionEndpoint extends events.EventEmitter {
    */
   getConnectionCount () {
     return this._authenticatedSocketsCounter
-  }
-
-  /**
-   * Creates an HTTP or HTTPS server for ws to attach itself to,
-   * depending on the options the client configured
-   *
-   * @private
-   * @returns {http.HttpServer | http.HttpsServer}
-   */
-  _createHttpServer () {
-    if (this._isHttpsServer()) {
-      const httpsOptions = {
-        key: this._options.sslKey,
-        cert: this._options.sslCert
-      }
-
-      if (this._options.sslCa) {
-        httpsOptions.ca = this._options.sslCa
-      }
-
-      return https.createServer(httpsOptions)
-    }
-
-    return http.createServer()
-  }
-
-  /**
-   * Responds to http health checks.
-   * Responds with 200(OK) if deepstream is alive.
-   *
-   * @private
-   * @returns {void}
-   */
-  _handleHealthCheck (req, res) {
-    if (req.method === 'GET' && req.url === this._options.healthCheckPath) {
-      res.writeHead(200)
-      res.end()
-    }
-  }
-
-  /**
-   * Called whenever either the server itself or one of its sockets
-   * is closed. Once everything is closed it will emit a close event
-   *
-   * @private
-   * @returns {void}
-   */
-  _checkClosed () {
-    if (this._wsServerClosed === false) {
-      return
-    }
-
-    this.emit('close')
   }
 
   /**
@@ -468,21 +369,6 @@ module.exports = class ConnectionEndpoint extends events.EventEmitter {
   }
 
   /**
-   * Called for the ready event of the ws server.
-   *
-   * @private
-   * @returns {void}
-   */
-  _checkReady () {
-    const address = this._server.address()
-    const msg = `Listening for websocket connections on ${address.address}:${address.port}${this._options.urlPath}`
-    this._wsReady = true
-
-    this._options.logger.log(C.LOG_LEVEL.INFO, C.EVENT.INFO, msg)
-    this._readyCallback()
-  }
-
-  /**
    * Generic callback for connection errors. This will most often be called
    * if the configured port number isn't available
    *
@@ -514,28 +400,6 @@ module.exports = class ConnectionEndpoint extends events.EventEmitter {
     }
 
     this._authenticatedSocketsCounter--
-  }
-
-  /**
-  * Returns whether or not sslKey and sslCert have been set to start a https server.
-  *
-  * @throws Will throw an error if only sslKey or sslCert have been specified
-  *
-  * @private
-  * @returns {boolean}
-  */
-  _isHttpsServer () {
-    let isHttps = false
-    if (this._options.sslKey || this._options.sslCert) {
-      if (!this._options.sslKey) {
-        throw new Error('Must also include sslKey in order to use HTTPS')
-      }
-      if (!this._options.sslCert) {
-        throw new Error('Must also include sslCert in order to use HTTPS')
-      }
-      isHttps = true
-    }
-    return isHttps
   }
 
   /**
