@@ -3,7 +3,7 @@
 const C = require('../constants/constants')
 const messageParser = require('./message-parser')
 const messageBuilder = require('./message-builder')
-const SocketWrapper = require('./socket-wrapper')
+const SocketWrapper = require('./uws-socket-wrapper')
 const events = require('events')
 const http = require('http')
 const https = require('https')
@@ -23,7 +23,7 @@ const OPEN = 'OPEN'
  * @param {Object} options the extended default options
  * @param {Function} readyCallback will be invoked once both the ws is ready
  */
-module.exports = class WebsocketServer extends events.EventEmitter {
+module.exports = class UWSWebsocketServer extends events.EventEmitter {
   constructor (options, readyCallback) {
     super()
     this._options = options
@@ -57,6 +57,17 @@ module.exports = class WebsocketServer extends events.EventEmitter {
   }
 
   /**
+   * Returns the number of currently connected clients. This is used by the
+   * cluster module to determine loadbalancing endpoints
+   *
+   * @public
+   * @returns {Number} connectionCount
+   */
+  getConnectionCount () {
+    return this._authenticatedSocketsCounter
+  }
+
+  /**
    * Closes the ws server connection. The ConnectionEndpoint
    * will emit a close event once succesfully shut down
    * @public
@@ -73,6 +84,41 @@ module.exports = class WebsocketServer extends events.EventEmitter {
     })
 
     native.server.group.close(this._ws)
+  }
+
+  /**
+   * Callback for 'connection' event. Receives
+   * a connected socket, wraps it in a SocketWrapper, sends a connection ack to the user and
+  * subscribes to authentication messages.
+   * @param {Websocket} socket
+   *
+   * @private
+   * @returns {void}
+   */
+  _onConnection (socket) {
+    const socketWrapper = new SocketWrapper(socket, this._options)
+    const handshakeData = socketWrapper.getHandshakeData()
+    const logMsg = `from ${handshakeData.referer} (${handshakeData.remoteAddress})`
+    let disconnectTimer
+
+    this._options.logger.log(C.LOG_LEVEL.INFO, C.EVENT.INCOMING_CONNECTION, logMsg)
+
+    if (this._options.unauthenticatedClientTimeout !== null) {
+      disconnectTimer = setTimeout(
+        this._processConnectionTimeout.bind(this, socketWrapper),
+        this._options.unauthenticatedClientTimeout
+      )
+      socketWrapper.once('close', clearTimeout.bind(null, disconnectTimer))
+    }
+
+    socketWrapper.connectionCallback = this._processConnectionMessage.bind(this, socketWrapper)
+    socketWrapper.authCallBack = this._authenticateConnection.bind(
+      this,
+      socketWrapper,
+      disconnectTimer
+    )
+    socketWrapper.sendMessage(C.TOPIC.CONNECTION, C.ACTIONS.CHALLENGE)
+    socket.on('message', socketWrapper.connectionCallback)
   }
 
   /**
