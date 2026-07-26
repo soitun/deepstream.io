@@ -1,3 +1,13 @@
+## [10.2.0] - 2026.07.26
+
+### Security - breaking change
+
+- The deepstream listener was accepting client provided regular expression wich could cause a DoS attack. Starting with this version only Valve style paths are accepted as listener patterns. We although keep some regex syntax valid for backwards compatibility. See docs.
+
+### Fix
+
+- Permission action for record patch message
+
 ## [10.1.4] - 2026.06.30
 
 ### Fix
