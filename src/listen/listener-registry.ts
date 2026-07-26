@@ -1,6 +1,7 @@
 import { EVENT_ACTION, RECORD_ACTION, TOPIC, ListenMessage, STATE_REGISTRY_TOPIC } from '../constants'
 import { EVENT, SubscriptionListener, DeepstreamConfig, DeepstreamServices, Provider, SocketWrapper, StateRegistry, SubscriptionRegistry } from '@deepstream/types'
 import { shuffleArray } from '../utils/utils'
+import { compileListenPattern } from './listener-pattern-compiler'
 
 interface ListenInProgress {
   queryProvider: Provider,
@@ -27,11 +28,11 @@ export class ListenerRegistry implements SubscriptionListener {
   * e.g. data providers that provide data on the fly, based on what clients
   * are actually interested in.
   *
-  * When a client registers as a listener, it provides a regular expression.
-  * It will then immediatly get a number of callbacks for existing record subscriptions
-  * whose names match that regular expression.
-  *
-  * After that, whenever a record with a name matching that regular expression is subscribed
+   * When a client registers as a listener, it provides a wildcard pattern.
+   * It will then immediatly get a number of callbacks for existing record subscriptions
+   * whose names match that wildcard pattern.
+   *
+   * After that, whenever a record with a name matching that wildcard pattern is subscribed
   * to for the first time, the listener is notified.
   *
   * Whenever the last subscription for a matching record is removed, the listener is also
@@ -438,11 +439,14 @@ export class ListenerRegistry implements SubscriptionListener {
   }
 
   /**
-  * Compiles a regular expression from an incoming pattern
-  */
+   * Compiles a regular expression from an incoming pattern
+   */
   private addPattern (pattern: string): void {
     if (!this.patterns.has(pattern)) {
-      this.patterns.set(pattern, new RegExp(pattern))
+      const regexp = compileListenPattern(pattern)
+      if (regexp) {
+        this.patterns.set(pattern, regexp)
+      }
     }
   }
 
@@ -542,20 +546,24 @@ export class ListenerRegistry implements SubscriptionListener {
   }
 
   /**
-  * Validates that the pattern is not empty and is a valid regular expression
-  */
+   * Validates that the pattern is not empty and compiles to a safe regular expression
+   */
   private validatePattern (socketWrapper: SocketWrapper, message: ListenMessage): RegExp | null {
-    try {
-      return new RegExp(message.name)
-    } catch (e) {
-      socketWrapper.sendMessage({
-        topic: this.topic,
-        action: this.actions.INVALID_LISTEN_REGEX,
-        name: message.name
-      })
-      this.services.logger.warn(this.actions[this.actions.INVALID_LISTEN_REGEX], `${e}`, this.metaData)
-      return null
+    const regexp = compileListenPattern(message.name)
+    if (regexp) {
+      return regexp
     }
+    socketWrapper.sendMessage({
+      topic: this.topic,
+      action: this.actions.INVALID_LISTEN_REGEX,
+      name: message.name
+    })
+    this.services.logger.warn(
+      this.actions[this.actions.INVALID_LISTEN_REGEX],
+      `invalid listen pattern: ${message.name}`,
+      this.metaData,
+    )
+    return null
   }
 
   /**
