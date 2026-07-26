@@ -369,7 +369,7 @@ export default class RecordHandler extends Handler<RecordMessage> {
     }
 
     this.permissionAction(RA.CREATE, message, originalAction, socketWrapper, () => {
-      this.permissionAction(RA.UPDATE, message, originalAction, socketWrapper, () => {
+      this.permissionAction(message.action, message, originalAction, socketWrapper, () => {
         this.update(socketWrapper, message, true)
       })
     })
