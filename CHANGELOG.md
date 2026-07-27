@@ -1,3 +1,9 @@
+## [10.2.1] - 2026.07.27
+
+### Security
+
+- extra prototype pollution prevention
+
 ## [10.2.0] - 2026.07.26
 
 ### Security - breaking change
