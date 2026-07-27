@@ -65,6 +65,15 @@ export function isValidPath (path: string): boolean {
 }
 
 /**
+ * Returns true if the key is not a forbidden prototype-pollution vector.
+ * This is intended for whole-object writes where individual keys must be
+ * validated before being stored as own properties.
+ */
+export function isSafeKey (key: string): boolean {
+  return !FORBIDDEN_KEYS.has(key)
+}
+
+/**
  * Parses the path. Splits it into
  * keys for objects and indices for arrays.
  */

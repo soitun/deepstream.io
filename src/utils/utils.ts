@@ -77,22 +77,27 @@ export let validateMap = function (map: any, throwError: boolean, schema: any): 
 export let merge = function (...args: any[]) {
   const result = {}
   const objs = Array.prototype.slice.apply(arguments)
-  let i
 
   const internalMerge = (objA: any, objB: any) => {
-    let key
-
-    for (key in objB) {
-      if (objB[key] && objB[key].constructor === Object) {
+    const keys = Object.keys(objB)
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[i]
+      // Prevent prototype pollution: assigning to __proto__ would
+      // mutate the object's prototype, not set an own property
+      if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+        continue
+      }
+      const value = objB[key]
+      if (value && value.constructor === Object) {
         objA[key] = objA[key] || {}
-        internalMerge(objA[key], objB[key])
-      } else if (objB[key] !== undefined) {
-        objA[key] = objB[key]
+        internalMerge(objA[key], value)
+      } else if (value !== undefined) {
+        objA[key] = value
       }
     }
   }
 
-  for (i = 0; i < objs.length; i++) {
+  for (let i = 0; i < objs.length; i++) {
     internalMerge(result, objs[i])
   }
 
